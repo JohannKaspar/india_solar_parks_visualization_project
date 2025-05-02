@@ -10,3 +10,4 @@ PyPDF2
 openpyxl
 arize-phoenix-otel
 ipykernel
+supabase

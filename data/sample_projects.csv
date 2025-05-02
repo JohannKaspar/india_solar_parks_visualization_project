@@ -1,0 +1,7 @@
+name,capacity_mw,state,year_commissioned,commission_date,latitude,longitude,type,developer,status
+Delhi Solar 1,100,Delhi,2020,2020-06-15,28.6139,77.2090,Utility,Adani,Realized
+Mumbai Rooftop,5,Maharashtra,2022,,19.0760,72.8777,Rooftop,Tata Power,Planned
+Gujarat Float,50,Gujarat,2021,2021-09-01,22.2587,71.1924,Floating,ReNew,Realized
+Chennai Hybrid,75,Tamil Nadu,2023,,13.0827,80.2707,Hybrid,Azure,Planned
+Jaipur Utility,120,Rajasthan,2019,2019-03-20,26.9124,75.7873,Utility,NTPC,Realized
+Kolkata Rooftop,8,West Bengal,2021,,22.5726,88.3639,Rooftop,Adani,Planned 

@@ -11,3 +11,4 @@ openpyxl
 arize-phoenix-otel
 ipykernel
 supabase
+streamlit

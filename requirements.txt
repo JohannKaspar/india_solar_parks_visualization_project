@@ -1,0 +1,12 @@
+generative-ai-hub-sdk[all]
+langchain
+langgraph
+openai
+langchain_community
+langchain_openai
+fastapi
+python-dotenv
+PyPDF2
+openpyxl
+arize-phoenix-otel
+ipykernel

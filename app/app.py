@@ -5,6 +5,9 @@ import altair as alt
 import os
 from supabase import create_client, Client
 from dotenv import load_dotenv
+import geopandas as gpd
+import glob
+import re
 
 # Load environment variables from .env file
 load_dotenv()
@@ -122,11 +125,9 @@ def sidebar(df, year_min, year_max, min_capacity, max_capacity):
 
     # Dot size slider
     dot_size = st.sidebar.slider('Dot Size', min_value=500, max_value=20000, value=10000, step=500)
-    # Map layer select
-    map_layer = st.sidebar.selectbox('Map Layer', ['Project Heatmap', 'Solar Resource (GHI)'], key='map_layer')
-    # Heatmap toggle (only for project heatmap)
-    show_heatmap = st.sidebar.checkbox('Show Heatmap', value=True, key='show_heatmap') if map_layer == 'Project Heatmap' else False
-    return selected_state, selected_type, selected_status, selected_developer, selected_owner, selected_supplier, capacity_range, reset, reset_map, show_heatmap, dot_size, map_layer
+    # Heatmap selection (No heatmap, Project Heatmap, or Solar Resource (GHI))
+    heatmap_option = st.sidebar.selectbox('Heatmap', ['No Heatmap', 'Project Heatmap', 'Solar Resource (GHI)', 'State Energy Consumption'], key='heatmap_option')
+    return selected_state, selected_type, selected_status, selected_developer, selected_owner, selected_supplier, capacity_range, reset, reset_map, heatmap_option, dot_size
 
 # --- Year Slider ---
 def year_slider_section(df, year_min, year_max):
@@ -139,20 +140,16 @@ def year_slider_section(df, year_min, year_max):
     return selected_year
 
 # --- Map Section ---
-def map_section(df_filtered, map_view_state, show_heatmap, dot_size, map_layer):
+def map_section(df_filtered, map_view_state, heatmap_option, dot_size, selected_year):
     layers = []
-    if map_layer == 'Solar Resource (GHI)':
+    if heatmap_option == 'Solar Resource (GHI)':
         # Load GHI data
-        ghi_df = pd.read_csv('../extract/solar/extracted_ghi_latlon.csv')
+        ghi_df = pd.read_csv('data/extracted_ghi_latlon.csv')
         # Remove NaNs
         ghi_df = ghi_df.dropna(subset=['ghi'])
         # Normalize GHI for color mapping (3.0 to 6.0)
         ghi_min, ghi_max = 3.0, 6.0
         def ghi_to_color(ghi):
-            # Map GHI to yellow-to-red (YlOrRd)
-            # 3.0 (low) = yellow, 6.0 (high) = dark red
-            # We'll use a simple linear interpolation between yellow and red
-            # yellow: (255,255,153), red: (153,0,0)
             t = (ghi - ghi_min) / (ghi_max - ghi_min)
             r = int(255 * (1-t) + 153 * t)
             g = int(255 * (1-t) + 0 * t)
@@ -169,7 +166,40 @@ def map_section(df_filtered, map_view_state, show_heatmap, dot_size, map_layer):
             opacity=0.5,
         )
         layers.append(ghi_layer)
-    else:
+    elif heatmap_option == 'State Energy Consumption':
+        # List all available GeoJSON files for years
+        geojson_files = glob.glob('data/state_energy_consumption_*.geojson')
+        available_years = []
+        for f in geojson_files:
+            m = re.search(r'(\d{4})', f)
+            if m:
+                available_years.append(int(m.group(1)))
+        if not available_years:
+            st.warning("No state energy consumption data available.")
+            return
+        closest_year = get_closest_year(selected_year, available_years)
+        geojson_path = f'data/state_energy_consumption_{closest_year}.geojson'
+        gdf_year = gpd.read_file(geojson_path)
+        # Normalize energy_requirement for color mapping
+        energy_min = gdf_year['energy_requirement'].min()
+        energy_max = gdf_year['energy_requirement'].max()
+        def energy_to_color(energy):
+            t = (energy - energy_min) / (energy_max - energy_min) if energy_max > energy_min else 0
+            r = int(255 * t + 255 * (1-t))
+            g = int(255 * (1-t))
+            b = int(0)
+            return [r, g, b, 180]
+        gdf_year['fill_color'] = gdf_year['energy_requirement'].apply(energy_to_color)
+        geojson_layer = pdk.Layer(
+            "GeoJsonLayer",
+            data=gdf_year,
+            get_fill_color="fill_color",
+            pickable=True,
+            auto_highlight=True,
+            opacity=0.6,
+        )
+        layers.append(geojson_layer)
+    elif heatmap_option == 'Project Heatmap':
         heatmap_layer = pdk.Layer(
             'HeatmapLayer',
             data=df_filtered,
@@ -177,8 +207,7 @@ def map_section(df_filtered, map_view_state, show_heatmap, dot_size, map_layer):
             aggregation='MEAN',
             get_weight='capacity_mw',
         )
-        if show_heatmap:
-            layers.append(heatmap_layer)
+        layers.append(heatmap_layer)
     layer = pdk.Layer(
         'ScatterplotLayer',
         data=df_filtered,
@@ -196,8 +225,11 @@ def map_section(df_filtered, map_view_state, show_heatmap, dot_size, map_layer):
         map_style='mapbox://styles/mapbox/light-v9',
         initial_view_state=pdk.ViewState(**map_view_state),
         layers=layers,
-        tooltip=tooltip if map_layer == 'Project Heatmap' else None,
+        tooltip=tooltip if heatmap_option != 'Solar Resource (GHI)' and heatmap_option != 'State Energy Consumption' else None,
     ))
+
+    if heatmap_option == 'State Energy Consumption' and closest_year != selected_year:
+        st.info(f"Estimated data (showing closest available year: {closest_year})")
 
 def info_box_section(df_filtered):
     total_projects = len(df_filtered)
@@ -247,7 +279,7 @@ def main():
         st.session_state['map_view'] = DEFAULT_MAP_VIEW.copy()
 
     header_section()
-    selected_state, selected_type, selected_status, selected_developer, selected_owner, selected_supplier, capacity_range, reset, reset_map, show_heatmap, dot_size, map_layer = sidebar(df, year_min, year_max, min_capacity, max_capacity)
+    selected_state, selected_type, selected_status, selected_developer, selected_owner, selected_supplier, capacity_range, reset, reset_map, heatmap_option, dot_size = sidebar(df, year_min, year_max, min_capacity, max_capacity)
 
     # Apply all filters except year
     df_filtered = df.copy()
@@ -272,7 +304,7 @@ def main():
     # Map (with default view for India)
     if reset_map:
         st.session_state['map_view'] = DEFAULT_MAP_VIEW.copy()
-    map_section(df_filtered, st.session_state['map_view'], show_heatmap, dot_size, map_layer)
+    map_section(df_filtered, st.session_state['map_view'], heatmap_option, dot_size, selected_year)
 
     info_box_section(df_filtered)
 
@@ -281,6 +313,9 @@ def main():
 
     # Info graphics section (bar chart)
     info_graphics_section(df)
+
+def get_closest_year(selected_year, available_years):
+    return min(available_years, key=lambda x: abs(x - selected_year))
 
 if __name__ == '__main__':
     main()

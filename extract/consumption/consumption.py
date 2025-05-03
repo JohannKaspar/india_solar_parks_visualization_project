@@ -73,7 +73,7 @@ def fetch_and_aggregate_cea():
             rows.append({
                 "state": state,
                 "year": int(year_val),
-                "energy_requirement": energy
+                "energy_requirement": round(energy, 2)
             })
 
     df = pd.DataFrame(rows)

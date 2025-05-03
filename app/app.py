@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 import geopandas as gpd
 import glob
 import re
+import numpy as np
 
 # Load environment variables from .env file
 load_dotenv()
@@ -123,11 +124,13 @@ def sidebar(df, year_min, year_max, min_capacity, max_capacity):
     st.sidebar.markdown("---")  # Add a divider line
     st.sidebar.markdown("### Map Settings")  # Add a header for map settings
 
-    # Dot size slider
-    dot_size = st.sidebar.slider('Dot Size', min_value=500, max_value=20000, value=10000, step=500)
-    # Heatmap selection (No heatmap, Project Heatmap, or Solar Resource (GHI))
+    # Dot size settings
+    size_factor = st.sidebar.slider('Marker Size', min_value=1, max_value=20, value=10, step=1)
+    use_capacity_size = st.sidebar.checkbox('Scale marker size by project capacity', value=False)
+    
+    # Heatmap selection
     heatmap_option = st.sidebar.selectbox('Heatmap', ['No Heatmap', 'Project Heatmap', 'Solar Resource (GHI)', 'State Energy Consumption'], key='heatmap_option')
-    return selected_state, selected_type, selected_status, selected_developer, selected_owner, selected_supplier, capacity_range, reset, reset_map, heatmap_option, dot_size
+    return selected_state, selected_type, selected_status, selected_developer, selected_owner, selected_supplier, capacity_range, reset, reset_map, heatmap_option, size_factor, use_capacity_size
 
 # --- Year Slider ---
 def year_slider_section(df, year_min, year_max):
@@ -140,7 +143,7 @@ def year_slider_section(df, year_min, year_max):
     return selected_year
 
 # --- Map Section ---
-def map_section(df_filtered, map_view_state, heatmap_option, dot_size, selected_year):
+def map_section(df_filtered, map_view_state, heatmap_option, size_factor, use_capacity_size, selected_year):
     layers = []
     if heatmap_option == 'Solar Resource (GHI)':
         # Load GHI data
@@ -208,24 +211,38 @@ def map_section(df_filtered, map_view_state, heatmap_option, dot_size, selected_
             get_weight='capacity_mw',
         )
         layers.append(heatmap_layer)
+
+    # Calculate radius based on settings
+    if use_capacity_size:
+        # Use logarithmic scaling for capacity
+        df_filtered['radius'] = np.log1p(df_filtered['capacity_mw']) * 500 * size_factor
+    else:
+        df_filtered['radius'] = 1000 *size_factor
+
     layer = pdk.Layer(
         'ScatterplotLayer',
         data=df_filtered,
         get_position='[longitude, latitude]',
-        get_radius=dot_size,
+        get_radius='radius',
         get_fill_color='[200, 30, 0, 160]',
-        pickable=True
+        pickable=heatmap_option != 'State Energy Consumption',
+        get_polygon="geometry"
     )
     layers.append(layer)
     tooltip = {
         "html": "<b>{name}</b><br/>Capacity: {capacity_mw} MW<br/>State: {state}<br/>Year: {year_commissioned}<br/>Commission Date: {commission_date}<br/>Type: {type}<br/>Status: {status}<br/>Developer: {developer}<br/>Owner: {owner}<br/>Supplier: {supplier}",
         "style": {"backgroundColor": "steelblue", "color": "white"}
     }
+    if heatmap_option == 'State Energy Consumption':
+        tooltip = {
+            "html": "<b>{NAME_1}</b><br/>Energy Consumption: {energy_requirement} GWh",
+            "style": {"backgroundColor": "steelblue", "color": "white"}
+        }
     st.pydeck_chart(pdk.Deck(
         map_style='mapbox://styles/mapbox/light-v9',
         initial_view_state=pdk.ViewState(**map_view_state),
         layers=layers,
-        tooltip=tooltip if heatmap_option != 'Solar Resource (GHI)' and heatmap_option != 'State Energy Consumption' else None,
+        tooltip=tooltip,
     ))
 
     if heatmap_option == 'State Energy Consumption' and closest_year != selected_year:
@@ -246,6 +263,8 @@ def table_section(df_filtered):
 def info_graphics_section(df):
     # Filter out rows where year_commissioned is 0 or NaN
     df_filtered = df[df['year_commissioned'].notna() & (df['year_commissioned'] != 0)]
+    
+    # Projects per year chart
     bar_data = df_filtered.groupby('year_commissioned').size().reset_index(name='count')
     bar_chart = alt.Chart(bar_data).mark_bar().encode(
         x=alt.X('year_commissioned:O', title='Year Commissioned'),
@@ -256,7 +275,7 @@ def info_graphics_section(df):
     st.write('### Projects Commissioned per Year')
     st.altair_chart(bar_chart, use_container_width=True)
 
-    # --- Total Capacity per Year Chart ---
+    # Total Capacity per Year Chart
     cap_data = df_filtered.groupby('year_commissioned')['capacity_mw'].sum().reset_index()
     cap_chart = alt.Chart(cap_data).mark_line(point=True).encode(
         x=alt.X('year_commissioned:O', title='Year Commissioned'),
@@ -265,6 +284,17 @@ def info_graphics_section(df):
     ).properties(width=600, height=200)
     st.write('### Total Capacity Commissioned per Year')
     st.altair_chart(cap_chart, use_container_width=True)
+
+    # Capacity Distribution Histogram
+    st.write('### Project Capacity Distribution')
+    hist_chart = alt.Chart(df_filtered).mark_bar().encode(
+        x=alt.X('capacity_mw:Q', 
+                title='Project Capacity (MW)',
+                bin=alt.Bin(maxbins=50)),
+        y=alt.Y('count()', title='Number of Projects'),
+        tooltip=['count()', 'capacity_mw']
+    ).properties(width=600, height=200)
+    st.altair_chart(hist_chart, use_container_width=True)
 
 # --- Main App ---
 def main():
@@ -279,7 +309,7 @@ def main():
         st.session_state['map_view'] = DEFAULT_MAP_VIEW.copy()
 
     header_section()
-    selected_state, selected_type, selected_status, selected_developer, selected_owner, selected_supplier, capacity_range, reset, reset_map, heatmap_option, dot_size = sidebar(df, year_min, year_max, min_capacity, max_capacity)
+    selected_state, selected_type, selected_status, selected_developer, selected_owner, selected_supplier, capacity_range, reset, reset_map, heatmap_option, size_factor, use_capacity_size = sidebar(df, year_min, year_max, min_capacity, max_capacity)
 
     # Apply all filters except year
     df_filtered = df.copy()
@@ -304,7 +334,7 @@ def main():
     # Map (with default view for India)
     if reset_map:
         st.session_state['map_view'] = DEFAULT_MAP_VIEW.copy()
-    map_section(df_filtered, st.session_state['map_view'], heatmap_option, dot_size, selected_year)
+    map_section(df_filtered, st.session_state['map_view'], heatmap_option, size_factor, use_capacity_size, selected_year)
 
     info_box_section(df_filtered)
 

@@ -12,3 +12,4 @@ arize-phoenix-otel
 ipykernel
 supabase
 streamlit
+arize-phoenix-otel

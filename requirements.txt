@@ -13,3 +13,10 @@ ipykernel
 supabase
 streamlit
 arize-phoenix-otel
+plotly
+opencv-python
+numpy
+matplotlib
+collections
+pandas
+scipy

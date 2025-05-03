@@ -9,8 +9,8 @@
 
 ## 🎯 1) Motivation / Goal to Achieve
 
-India is scaling up solar energy rapidly, but comprehensive and up-to-date information about existing projects is scattered across government portals, company PDFs, press releases, and industry databases. This fragmented data makes it difficult for developers, investors, and planners to:
-
+India is scaling up solar energy rapidly, but comprehensive and up-to-date information about existing projects is scattered across government portals, company PDFs, press releases, and industry databases.
+This fragmented data makes it difficult for developers, investors, and planners to:
 - Track what solar capacity already exists
 - Understand where opportunities or infrastructure gaps lie
 - Make informed investment or policy decisions
@@ -62,7 +62,7 @@ Build an AI-powered agent that:
 
 ### 📚 Starter Data Sources
 - [MNRE India](https://mnre.gov.in) – Ministry of New & Renewable Energy
-- [SECI](https://mnre.gov.in) – Solar Energy Corporation of India
+- [SECI](https://www.seci.co.in) – Solar Energy Corporation of India
 - [POSOCO / Grid India](https://posoco.in/en/) – Real-time dispatch & infrastructure
 - [Investor Relations PDFs] from Adani, ReNew, Tata Power, Azure
 - [NSEFI](https://www.nsefi.in) – National Solar Energy Federation of India

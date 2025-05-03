@@ -87,9 +87,7 @@ def load_data_from_supabase():
 
     # Clean up the lists
     operators['operator'] = operators['operator'].apply(clean_list)
-    print(owners['owner'])
     owners['owner'] = owners['owner'].apply(clean_list)
-    print(owners['owner'])
     suppliers['supplier'] = suppliers['supplier'].apply(clean_list)
 
     # Convert lists to strings for display
@@ -198,7 +196,7 @@ def sidebar(df, year_min, year_max, min_capacity, max_capacity):
 # --- Year Slider ---
 def year_slider_section(df, year_min, year_max):
     # Filter out rows where year_commissioned is 0 or NaN
-    df_filtered = df[df['year_commissioned'].notna() & (df['year_commissioned'] != 0)]
+    df_filtered = df[df['year_commissioned'].notna() & (df['year_commissioned'] > 1900)]
     year_min = int(df_filtered['year_commissioned'].min())
     year_max = int(df_filtered['year_commissioned'].max())
     st.write('### Filter by Commissioned Year')
@@ -309,6 +307,8 @@ def map_section(df_filtered, map_view_state, heatmap_option, size_factor, use_ca
         layers=layers,
         tooltip=tooltip,
     ))
+    # <iframe src="https://www.google.com/maps/d/u/0/embed?mid=1ssxg5qgL8pDlVKV4Jcc4axK_O9s2DYm2&ehbc=2E312F" width="100%" height="480"></iframe>
+    # st.components.v1.iframe("https://www.google.com/maps/d/u/0/embed?mid=1ssxg5qgL8pDlVKV4Jcc4axK_O9s2DYm2&ehbc=2E312F")
 
     if heatmap_option == 'State Energy Consumption' and closest_year != selected_year:
         st.info(f"Estimated data (showing closest available year: {closest_year})")
@@ -327,7 +327,7 @@ def table_section(df_filtered):
 # --- Info Graphics Section (Bar Chart) ---
 def info_graphics_section(df):
     # Filter out rows where year_commissioned is 0 or NaN
-    df_filtered = df[df['year_commissioned'].notna() & (df['year_commissioned'] != 0)]
+    df_filtered = df[df['year_commissioned'].notna() & (df['year_commissioned'] > 1900)]
     
     # Projects per year chart
     bar_data = df_filtered.groupby('year_commissioned').size().reset_index(name='count')
@@ -365,8 +365,8 @@ def info_graphics_section(df):
 def main():
     # Load the data from Supabase
     df = load_data_from_supabase()
-    year_min = int((df[df['year_commissioned'] != 0]['year_commissioned']).min())
-    year_max = int((df[df['year_commissioned'] != 0]['year_commissioned']).max())
+    year_min = int((df[df['year_commissioned'] > 1900]['year_commissioned']).min())
+    year_max = int((df[df['year_commissioned'] > 1900]['year_commissioned']).max())
     min_capacity = int(df['capacity_mw'].min())
     max_capacity = int(df['capacity_mw'].max())
 
@@ -389,8 +389,6 @@ def main():
     if selected_operator:
         df_filtered = df_filtered[df_filtered['operator'].apply(lambda x: match_selected(x, selected_operator))]
     if selected_owner:
-        print(selected_owner)
-        print(df_filtered['owner'])
         df_filtered = df_filtered[df_filtered['owner'].apply(lambda x: match_selected(x, selected_owner))]
     df_filtered = df_filtered[(df_filtered['capacity_mw'] >= capacity_range[0]) & (df_filtered['capacity_mw'] <= capacity_range[1])]
 

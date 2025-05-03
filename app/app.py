@@ -17,7 +17,7 @@ load_dotenv()
 DEFAULT_MAP_VIEW = {
     'latitude': 22.5937,  # Center of India
     'longitude': 78.9629,
-    'zoom': 4,
+    'zoom': 3.3,
     'pitch': 0
 }
 
@@ -42,7 +42,7 @@ def load_data_from_supabase():
     df[numeric_cols] = df[numeric_cols].fillna(0)
     df[df.columns.difference(numeric_cols)] = df[df.columns.difference(numeric_cols)].fillna("N/A")
 
-    # Join with entities to get developer, owner, and supplier information
+    # Join with entities to get operator, owner, and supplier information
     entities_response = supabase.table('entities').select('*').execute()
     entities_data = entities_response.data
     entities_df = pd.DataFrame(entities_data)
@@ -51,22 +51,64 @@ def load_data_from_supabase():
     project_entities_df = pd.DataFrame(project_entities_data)
     # Merge entities with project_entities
     project_entities_df = project_entities_df.merge(entities_df, left_on='entity_id', right_on='entity_id', how='left')
-    # Group by project_id and role to get lists of developers, owners, and suppliers
-    developers = project_entities_df[project_entities_df['role'] == 'Developer'].groupby('project_id')['name'].apply(list).reset_index(name='developer')
+    # Group by project_id and role to get lists of operators, owners, and suppliers
+    operators = project_entities_df[project_entities_df['role'] == 'Operator'].groupby('project_id')['name'].apply(list).reset_index(name='operator')
     owners = project_entities_df[project_entities_df['role'] == 'Owner'].groupby('project_id')['name'].apply(list).reset_index(name='owner')
     suppliers = project_entities_df[project_entities_df['role'] == 'Supplier'].groupby('project_id')['name'].apply(list).reset_index(name='supplier')
-    # Convert lists to strings
-    developers['developer'] = developers['developer'].apply(lambda x: ', '.join(x) if isinstance(x, list) else '')
-    owners['owner'] = owners['owner'].apply(lambda x: ', '.join(x) if isinstance(x, list) else '')
-    suppliers['supplier'] = suppliers['supplier'].apply(lambda x: ', '.join(x) if isinstance(x, list) else '')
+
+    # Helper function to clean up stringified lists
+    def clean_list(x):
+        if not x or not isinstance(x, list):
+            return np.nan
+        if len(x) == 1 and isinstance(x[0], str):
+            try:
+                # Try to evaluate the string as a list
+                evaluated = eval(x[0])
+                if isinstance(evaluated, list):
+                    if len(evaluated) == 0:
+                        return np.nan
+                    return evaluated
+            except:
+                # If evaluation fails, split by common delimiters
+                if ';' in x[0]:
+                    return [item.strip() for item in x[0].split(';')]
+                elif ',' in x[0]:
+                    return [item.strip() for item in x[0].split(',')]
+        if len(x) == 1 and isinstance(x[0], list):
+            if len(x[0]) == 0:
+                return np.nan
+            else:
+                return x[0]
+        if isinstance(x, str) and len(x) == 0:
+            return np.nan
+        if isinstance(x, str):
+            return [x]
+        return x
+
+    # Clean up the lists
+    operators['operator'] = operators['operator'].apply(clean_list)
+    print(owners['owner'])
+    owners['owner'] = owners['owner'].apply(clean_list)
+    print(owners['owner'])
+    suppliers['supplier'] = suppliers['supplier'].apply(clean_list)
+
+    # Convert lists to strings for display
+    operators['operator_str'] = operators['operator'].apply(lambda x: ', '.join(x) if x and isinstance(x, list) else 'N/A')
+    owners['owner_str'] = owners['owner'].apply(lambda x: ', '.join(x) if x and isinstance(x, list) else 'N/A')
+    suppliers['supplier_str'] = suppliers['supplier'].apply(lambda x: ', '.join(x) if x and isinstance(x, list) else 'N/A')
+
     # Merge with main df
-    df = df.merge(developers, on='project_id', how='left')
+    df = df.merge(operators, on='project_id', how='left')
     df = df.merge(owners, on='project_id', how='left')
     df = df.merge(suppliers, on='project_id', how='left')
-    # Fill NaN with empty strings
-    df['developer'] = df['developer'].fillna('')
-    df['owner'] = df['owner'].fillna('')
-    df['supplier'] = df['supplier'].fillna('')
+    
+    # Fill NaN with N/A
+    df['operator_str'] = df['operator_str'].fillna('N/A')
+    df['operator'] = df['operator']
+    df['owner_str'] = df['owner_str'].fillna('N/A')
+    df['owner'] = df['owner']
+    df['supplier_str'] = df['supplier_str'].fillna('N/A')
+    df['supplier'] = df['supplier']
 
     return df
 
@@ -98,18 +140,39 @@ def sidebar(df, year_min, year_max, min_capacity, max_capacity):
     if 'status' not in st.session_state or reset:
         st.session_state['status'] = []
     selected_status = st.sidebar.multiselect('Status', statuses, key='status')
-    # Developer filter
-    developers = sorted(df['developer'].dropna().unique().tolist())
-    if 'developer' not in st.session_state or reset:
-        st.session_state['developer'] = []
-    selected_developer = st.sidebar.multiselect('Developer', developers, key='developer')
+
+    # Operator filter
+    all_operators = []
+    for operator_list in df['operator']:
+        if operator_list and isinstance(operator_list, list):
+            all_operators.extend(operator_list)
+        elif np.isnan(operator_list):
+            all_operators.append('N/A')
+    operators = sorted(set(all_operators))
+    if 'operator' not in st.session_state or reset:
+        st.session_state['operator'] = []
+    selected_operator = st.sidebar.multiselect('Operator', operators, key='operator')
+
     # Owner filter
-    owners = sorted(df['owner'].dropna().unique().tolist())
+    all_owners = []
+    for owner_list in df['owner']:
+        if isinstance(owner_list, list) and len(owner_list) > 0:
+            all_owners.extend(owner_list)
+        elif isinstance(owner_list, list) and len(owner_list) == 0 or np.isnan(owner_list):
+            all_owners.append('N/A')
+    owners = sorted(set(all_owners))
     if 'owner' not in st.session_state or reset:
         st.session_state['owner'] = []
     selected_owner = st.sidebar.multiselect('Owner', owners, key='owner')
+
     # Supplier filter
-    suppliers = sorted(df['supplier'].dropna().unique().tolist())
+    all_suppliers = []
+    for supplier_list in df['supplier']:
+        if supplier_list and isinstance(supplier_list, list):
+            all_suppliers.extend(supplier_list)
+        elif np.isnan(supplier_list):
+            all_suppliers.append('N/A')
+    suppliers = sorted(set(all_suppliers))
     if 'supplier' not in st.session_state or reset:
         st.session_state['supplier'] = []
     selected_supplier = st.sidebar.multiselect('Supplier', suppliers, key='supplier')
@@ -119,7 +182,7 @@ def sidebar(df, year_min, year_max, min_capacity, max_capacity):
     capacity_range = st.sidebar.slider('Capacity (MW)', min_capacity, max_capacity, key='capacity')
     # Year filter (for resetting)
     if 'year_slider' not in st.session_state or reset:
-        st.session_state['year_slider'] = year_max
+        st.session_state['year_slider'] = (year_min, year_max)
 
     st.sidebar.markdown("---")  # Add a divider line
     st.sidebar.markdown("### Map Settings")  # Add a header for map settings
@@ -130,7 +193,7 @@ def sidebar(df, year_min, year_max, min_capacity, max_capacity):
     
     # Heatmap selection
     heatmap_option = st.sidebar.selectbox('Heatmap', ['No Heatmap', 'Project Heatmap', 'Solar Resource (GHI)', 'State Energy Consumption'], key='heatmap_option')
-    return selected_state, selected_type, selected_status, selected_developer, selected_owner, selected_supplier, capacity_range, reset, reset_map, heatmap_option, size_factor, use_capacity_size
+    return selected_state, selected_type, selected_status, selected_operator, selected_owner, selected_supplier, capacity_range, reset, reset_map, heatmap_option, size_factor, use_capacity_size
 
 # --- Year Slider ---
 def year_slider_section(df, year_min, year_max):
@@ -139,8 +202,10 @@ def year_slider_section(df, year_min, year_max):
     year_min = int(df_filtered['year_commissioned'].min())
     year_max = int(df_filtered['year_commissioned'].max())
     st.write('### Filter by Commissioned Year')
-    selected_year = st.slider('Show projects commissioned up to year:', year_min, year_max, key='year_slider')
-    return selected_year
+    selected_year_range = st.slider(
+        'Show projects commissioned between years:',
+        year_min, year_max, key='year_slider')
+    return selected_year_range
 
 # --- Map Section ---
 def map_section(df_filtered, map_view_state, heatmap_option, size_factor, use_capacity_size, selected_year):
@@ -217,7 +282,7 @@ def map_section(df_filtered, map_view_state, heatmap_option, size_factor, use_ca
         # Use logarithmic scaling for capacity
         df_filtered['radius'] = np.log1p(df_filtered['capacity_mw']) * 500 * size_factor
     else:
-        df_filtered['radius'] = 1000 *size_factor
+        df_filtered['radius'] = 1000 * size_factor
 
     layer = pdk.Layer(
         'ScatterplotLayer',
@@ -230,7 +295,7 @@ def map_section(df_filtered, map_view_state, heatmap_option, size_factor, use_ca
     )
     layers.append(layer)
     tooltip = {
-        "html": "<b>{name}</b><br/>Capacity: {capacity_mw} MW<br/>State: {state}<br/>Year: {year_commissioned}<br/>Commission Date: {commission_date}<br/>Type: {type}<br/>Status: {status}<br/>Developer: {developer}<br/>Owner: {owner}<br/>Supplier: {supplier}",
+        "html": "<b>{name}</b><br/>Capacity: {capacity_mw} MW<br/>State: {state}<br/>Year: {year_commissioned}<br/>Commission Date: {commission_date}<br/>Type: {type}<br/>Status: {status}<br/>Operator: {operator}<br/>Owner: {owner_str}<br/>Supplier: {supplier}",
         "style": {"backgroundColor": "steelblue", "color": "white"}
     }
     if heatmap_option == 'State Energy Consumption':
@@ -257,7 +322,7 @@ def info_box_section(df_filtered):
 def table_section(df_filtered):
     st.write('---')
     st.write('### Project Data Table')
-    st.dataframe(df_filtered)
+    st.dataframe(df_filtered[['name', 'state', 'year_commissioned', 'commission_date', 'type', 'status', 'operator', 'owner', 'supplier', 'capacity_mw']])
 
 # --- Info Graphics Section (Bar Chart) ---
 def info_graphics_section(df):
@@ -300,8 +365,8 @@ def info_graphics_section(df):
 def main():
     # Load the data from Supabase
     df = load_data_from_supabase()
-    year_min = int(df['year_commissioned'].min())
-    year_max = int(df['year_commissioned'].max())
+    year_min = int((df[df['year_commissioned'] != 0]['year_commissioned']).min())
+    year_max = int((df[df['year_commissioned'] != 0]['year_commissioned']).max())
     min_capacity = int(df['capacity_mw'].min())
     max_capacity = int(df['capacity_mw'].max())
 
@@ -309,7 +374,7 @@ def main():
         st.session_state['map_view'] = DEFAULT_MAP_VIEW.copy()
 
     header_section()
-    selected_state, selected_type, selected_status, selected_developer, selected_owner, selected_supplier, capacity_range, reset, reset_map, heatmap_option, size_factor, use_capacity_size = sidebar(df, year_min, year_max, min_capacity, max_capacity)
+    selected_state, selected_type, selected_status, selected_operator, selected_owner, selected_supplier, capacity_range, reset, reset_map, heatmap_option, size_factor, use_capacity_size = sidebar(df, year_min, year_max, min_capacity, max_capacity)
 
     # Apply all filters except year
     df_filtered = df.copy()
@@ -319,22 +384,27 @@ def main():
         df_filtered = df_filtered[df_filtered['type'].isin(selected_type)]
     if selected_status:
         df_filtered = df_filtered[df_filtered['status'].isin(selected_status)]
-    if selected_developer:
-        df_filtered = df_filtered[df_filtered['developer'].isin(selected_developer)]
-    if selected_owner:
-        df_filtered = df_filtered[df_filtered['owner'].isin(selected_owner)]
     if selected_supplier:
-        df_filtered = df_filtered[df_filtered['supplier'].isin(selected_supplier)]
+        df_filtered = df_filtered[df_filtered['supplier'].apply(lambda x: match_selected(x, selected_supplier))]
+    if selected_operator:
+        df_filtered = df_filtered[df_filtered['operator'].apply(lambda x: match_selected(x, selected_operator))]
+    if selected_owner:
+        print(selected_owner)
+        print(df_filtered['owner'])
+        df_filtered = df_filtered[df_filtered['owner'].apply(lambda x: match_selected(x, selected_owner))]
     df_filtered = df_filtered[(df_filtered['capacity_mw'] >= capacity_range[0]) & (df_filtered['capacity_mw'] <= capacity_range[1])]
 
     # Year slider (right above the map)
-    selected_year = year_slider_section(df, year_min, year_max)
-    df_filtered = df_filtered[df_filtered['year_commissioned'] <= selected_year]
+    selected_year_range = year_slider_section(df, year_min, year_max)
+    df_filtered = df_filtered[
+        (df_filtered['year_commissioned'] >= selected_year_range[0]) &
+        (df_filtered['year_commissioned'] <= selected_year_range[1])
+    ]
 
     # Map (with default view for India)
     if reset_map:
         st.session_state['map_view'] = DEFAULT_MAP_VIEW.copy()
-    map_section(df_filtered, st.session_state['map_view'], heatmap_option, size_factor, use_capacity_size, selected_year)
+    map_section(df_filtered, st.session_state['map_view'], heatmap_option, size_factor, use_capacity_size, selected_year_range[1])
 
     info_box_section(df_filtered)
 
@@ -346,6 +416,13 @@ def main():
 
 def get_closest_year(selected_year, available_years):
     return min(available_years, key=lambda x: abs(x - selected_year))
+
+def match_selected(x, selected):
+    if isinstance(x, list):
+        return any(val in x for val in selected)
+    elif pd.isna(x):
+        return any(val == 'N/A' for val in selected)
+    return False
 
 if __name__ == '__main__':
     main()

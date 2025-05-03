@@ -33,10 +33,6 @@ def load_data_from_supabase():
     response = supabase.table('projects').select('*').execute()
     data = response.data
     df = pd.DataFrame(data)
-    # Add missing columns for compatibility
-    for col in ['state', 'status', 'commission_date']:
-        if col not in df.columns:
-            df[col] = None
     # Fill numeric columns with 0 and non-numeric columns with "N/A"
     numeric_cols = df.select_dtypes(include=['float64', 'int64']).columns
     df[numeric_cols] = df[numeric_cols].fillna(0)
@@ -123,21 +119,11 @@ def sidebar(df, year_min, year_max, min_capacity, max_capacity):
         reset = st.button('Reset Filters')
     with col_b:
         reset_map = st.button('Reset Map')
-    # State filter
-    states = sorted(df['state'].dropna().unique().tolist())
-    if 'state' not in st.session_state or reset:
-        st.session_state['state'] = []
-    selected_state = st.sidebar.multiselect('State', states, key='state')
     # Project type filter
     types = sorted(df['type'].dropna().unique().tolist())
     if 'type' not in st.session_state or reset:
         st.session_state['type'] = []
     selected_type = st.sidebar.multiselect('Project Type', types, key='type')
-    # Status filter
-    statuses = sorted(df['status'].dropna().unique().tolist())
-    if 'status' not in st.session_state or reset:
-        st.session_state['status'] = []
-    selected_status = st.sidebar.multiselect('Status', statuses, key='status')
 
     # Operator filter
     all_operators = []
@@ -191,7 +177,7 @@ def sidebar(df, year_min, year_max, min_capacity, max_capacity):
     
     # Heatmap selection
     heatmap_option = st.sidebar.selectbox('Heatmap', ['No Heatmap', 'Project Heatmap', 'Solar Resource (GHI)', 'State Energy Consumption'], key='heatmap_option')
-    return selected_state, selected_type, selected_status, selected_operator, selected_owner, selected_supplier, capacity_range, reset, reset_map, heatmap_option, size_factor, use_capacity_size
+    return selected_type, selected_operator, selected_owner, selected_supplier, capacity_range, reset, reset_map, heatmap_option, size_factor, use_capacity_size
 
 # --- Year Slider ---
 def year_slider_section(df, year_min, year_max):
@@ -293,7 +279,7 @@ def map_section(df_filtered, map_view_state, heatmap_option, size_factor, use_ca
     )
     layers.append(layer)
     tooltip = {
-        "html": "<b>{name}</b><br/>Capacity: {capacity_mw} MW<br/>State: {state}<br/>Year: {year_commissioned}<br/>Commission Date: {commission_date}<br/>Type: {type}<br/>Status: {status}<br/>Operator: {operator}<br/>Owner: {owner_str}<br/>Supplier: {supplier}",
+        "html": "<b>{name}</b><br/><b>Capacity:</b> {capacity_mw} MW<br/><b>Year:</b> {year_commissioned}<br/><b>Type:</b> {type}<br/><b>Operator:</b> {operator}<br/><b>Owner:</b> {owner_str}<br/><b>Supplier:</b> {supplier}",
         "style": {"backgroundColor": "steelblue", "color": "white"}
     }
     if heatmap_option == 'State Energy Consumption':
@@ -322,7 +308,7 @@ def info_box_section(df_filtered):
 def table_section(df_filtered):
     st.write('---')
     st.write('### Project Data Table')
-    st.dataframe(df_filtered[['name', 'state', 'year_commissioned', 'commission_date', 'type', 'status', 'operator', 'owner', 'supplier', 'capacity_mw']])
+    st.dataframe(df_filtered[['name', 'year_commissioned', 'type', 'operator', 'owner', 'supplier', 'capacity_mw']])
 
 # --- Info Graphics Section (Bar Chart) ---
 def info_graphics_section(df):
@@ -374,16 +360,12 @@ def main():
         st.session_state['map_view'] = DEFAULT_MAP_VIEW.copy()
 
     header_section()
-    selected_state, selected_type, selected_status, selected_operator, selected_owner, selected_supplier, capacity_range, reset, reset_map, heatmap_option, size_factor, use_capacity_size = sidebar(df, year_min, year_max, min_capacity, max_capacity)
+    selected_type, selected_operator, selected_owner, selected_supplier, capacity_range, reset, reset_map, heatmap_option, size_factor, use_capacity_size = sidebar(df, year_min, year_max, min_capacity, max_capacity)
 
     # Apply all filters except year
     df_filtered = df.copy()
-    if selected_state:
-        df_filtered = df_filtered[df_filtered['state'].isin(selected_state)]
     if selected_type:
         df_filtered = df_filtered[df_filtered['type'].isin(selected_type)]
-    if selected_status:
-        df_filtered = df_filtered[df_filtered['status'].isin(selected_status)]
     if selected_supplier:
         df_filtered = df_filtered[df_filtered['supplier'].apply(lambda x: match_selected(x, selected_supplier))]
     if selected_operator:
